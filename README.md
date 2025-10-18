@@ -22,7 +22,7 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 ## Getting Started
 
 1. Install dependencies:
-   `ash
+   `bash
    npm install
    `
 2. Create a Firebase project and enable Email/Password authentication. Provision a Firestore database (Start in production mode).
@@ -32,12 +32,12 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
    # then edit .env.local with your Firebase project keys
    `
 4. Run the development server:
-   `ash
+   `bash
    npm run dev
    `
    Vite defaults to http://localhost:5173.
 5. Build for production:
-   `ash
+   `bash
    npm run build
    `
 
@@ -51,21 +51,21 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 
 ## Key Modules
 
-- src/context/ – AuthProvider and ThemeProvider that manage global authentication state and theme toggling.
-- src/hooks/useUserCollection.ts – Re-usable Firestore collection listener scoped to the current user.
-- src/utils/firestoreHelpers.ts – Thin wrappers for creating projects and saving/deleting estimates.
-- src/pages/ – Route-level components for Dashboard, Projects, Estimates, Materials, Labor, Settings, and Auth screens.
-- src/pages/EstimatorPage.tsx – Core estimating logic: state sanitisation, calculations, local persistence, and cloud save/load.
+- src/context/ â€“ AuthProvider and ThemeProvider that manage global authentication state and theme toggling.
+- src/hooks/useUserCollection.ts â€“ Re-usable Firestore collection listener scoped to the current user.
+- src/utils/firestoreHelpers.ts â€“ Thin wrappers for creating projects and saving/deleting estimates.
+- src/pages/ â€“ Route-level components for Dashboard, Projects, Estimates, Materials, Labor, Settings, and Auth screens.
+- src/pages/EstimatorPage.tsx â€“ Core estimating logic: state sanitisation, calculations, local persistence, and cloud save/load.
 
 ## Scripts
 
 - 
-pm run dev – Start the Vite dev server.
+pm run dev â€“ Start the Vite dev server.
 - 
-pm run build – Type-check and produce a production build.
+pm run build â€“ Type-check and produce a production build.
 - 
-pm run preview – Preview the production bundle.
+pm run preview â€“ Preview the production bundle.
 - 
-pm run lint – Lint the project with ESLint.
+pm run lint â€“ Lint the project with ESLint.
 
 Happy estimating with ScopeSmart!
