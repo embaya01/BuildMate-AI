@@ -22,7 +22,7 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 ## Getting Started
 
 1. Install dependencies:
-   `bash
+   `
    npm install
    `
 2. Create a Firebase project and enable Email/Password authentication. Provision a Firestore database (Start in production mode).
@@ -32,12 +32,12 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
    # then edit .env.local with your Firebase project keys
    `
 4. Run the development server:
-   `bash
+   `
    npm run dev
    `
    Vite defaults to http://localhost:5173.
-5. Build for production:
-   `bash
+6. Build for production:
+   `
    npm run build
    `
 
