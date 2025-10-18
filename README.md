@@ -62,14 +62,18 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 ` 
 pm run dev 
 ` – Start the Vite dev server.
+
 `
 pm run build
 ` – Type-check and produce a production build.
+
 `
 pm run preview
 ` – Preview the production bundle.
+
 `
 pm run lint
 ` – Lint the project with ESLint.
+
 
 Happy estimating with ScopeSmart!
