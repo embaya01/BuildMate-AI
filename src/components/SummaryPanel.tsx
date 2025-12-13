@@ -153,7 +153,7 @@ export const SummaryPanel = ({
 
       <div className="summary__section summary__actions">
         <button className="button" type="button" onClick={onDownload}>
-          Download Estimate (.json)
+          Download Proposal (PDF)
         </button>
         <button className="button button--ghost" type="button" onClick={onCopySummary}>
           Copy Summary

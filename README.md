@@ -4,6 +4,20 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 
 ## Features
 
+<details>
+<summary><strong>AI Scope intake</strong></summary>
+
+Panel translates pasted narratives into draft materials, labor, subs, and permit allowances with a confidence ribbon and instant edits.
+
+</details>
+
+<details>
+<summary><strong>Plan & photo intake</strong></summary>
+
+Upload PDFs or site photos to extract footprint/floor data and auto-suggest categories tied to your catalog.
+
+</details>
+
 - **Dashboard overview** with real-time cards and a projects table sourced from Firestore.
 - **Projects workspace** to create, filter, update, and delete project records with activity tracking.
 - **Estimator** with detailed category breakdowns, financial summary, JSON export, clipboard summary, and cloud save/load for authenticated users.
@@ -51,21 +65,21 @@ ScopeSmart is a construction estimating workspace that combines a project dashbo
 
 ## Key Modules
 
-- src/context/ – AuthProvider and ThemeProvider that manage global authentication state and theme toggling.
-- src/hooks/useUserCollection.ts – Re-usable Firestore collection listener scoped to the current user.
-- src/utils/firestoreHelpers.ts – Thin wrappers for creating projects and saving/deleting estimates.
-- src/pages/ – Route-level components for Dashboard, Projects, Estimates, Materials, Labor, Settings, and Auth screens.
-- src/pages/EstimatorPage.tsx – Core estimating logic: state sanitisation, calculations, local persistence, and cloud save/load.
+- src/context/  AuthProvider and ThemeProvider that manage global authentication state and theme toggling.
+- src/hooks/useUserCollection.ts  Re-usable Firestore collection listener scoped to the current user.
+- src/utils/firestoreHelpers.ts  Thin wrappers for creating projects and saving/deleting estimates.
+- src/pages/  Route-level components for Dashboard, Projects, Estimates, Materials, Labor, Settings, and Auth screens.
+- src/pages/EstimatorPage.tsx  Core estimating logic: state sanitisation, calculations, local persistence, and cloud save/load.
 
 ## Scripts
 
 - 
-pm run dev – Start the Vite dev server.
+pm run dev  Start the Vite dev server.
 - 
-pm run build – Type-check and produce a production build.
+pm run build  Type-check and produce a production build.
 - 
-pm run preview – Preview the production bundle.
+pm run preview  Preview the production bundle.
 - 
-pm run lint – Lint the project with ESLint.
+pm run lint  Lint the project with ESLint.
 
 Happy estimating with ScopeSmart!

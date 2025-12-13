@@ -10,6 +10,8 @@ import { EquipmentSection } from '../components/EquipmentSection';
 import { PermitsSection } from '../components/PermitsSection';
 import { SubcontractorSection } from '../components/SubcontractorSection';
 import { SummaryPanel } from '../components/SummaryPanel';
+import { NLIntakePanel } from '../components/NLIntakePanel';
+import { generateEstimatePdf } from '../utils/pdfExport';
 import type {
   CostCategoryKey,
   CostItem,
@@ -33,6 +35,16 @@ import {
   getDefaultCategoryMap,
   safeUUID,
 } from '../utils/calculations';
+import {
+  draftEstimateFromScope,
+  type IntakeDraftResult,
+  type LaborDraft as LaborDraftSuggestion,
+  type MaterialRecommendation,
+  type PermitDraft as PermitDraftSuggestion,
+  type SubcontractorRecommendation,
+} from '../utils/nlIntake';
+import { PlanExtractionPanel } from '../components/PlanExtractionPanel';
+import { extractPlanInsights, type PlanExtractionResult } from '../utils/planExtraction';
 import { getSubcontractorSpecialtyLabel } from '../utils/subcontractors';
 
 const STORAGE_KEY = 'scopesmart-estimator-state-v1';
@@ -320,6 +332,167 @@ const buildPermitItems = (entries: PermitEntry[], totalSqFt: number, unit: AreaU
     quantity: safeSqFt,
     unitCost: Number.isFinite(entry.ratePerSqFt) && entry.ratePerSqFt >= 0 ? entry.ratePerSqFt : 0,
   }));
+};
+
+const convertPermitDraftsToEntries = (drafts: PermitDraftSuggestion[]): PermitEntry[] => {
+  if (!Array.isArray(drafts) || drafts.length === 0) {
+    return [];
+  }
+  return drafts.map((draft) => ({
+    id: draft.id || 'permit-' + safeUUID(),
+    name: draft.name,
+    ratePerSqFt: Number.isFinite(draft.ratePerSqFt) && draft.ratePerSqFt >= 0 ? draft.ratePerSqFt : 0,
+    notes: draft.notes ?? null,
+  }));
+};
+
+const tokenize = (input?: string | null) => {
+  if (!input) {
+    return [] as string[];
+  }
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2);
+};
+
+const matchMaterialRecommendations = (
+  recommendations: MaterialRecommendation[],
+  catalog: Array<MaterialCategoryDocument & { id: string }>
+) => {
+  if (!recommendations.length || catalog.length === 0) {
+    return [] as string[];
+  }
+  const catalogIndex = catalog.map((entry) => {
+    const tokens = [
+      ...tokenize(entry.name),
+      ...tokenize(entry.description ?? ''),
+      ...tokenize(entry.formula ?? ''),
+    ];
+    return {
+      id: entry.id,
+      tokens,
+      tokenSet: new Set(tokens),
+    };
+  });
+
+  const matches: string[] = [];
+  for (const recommendation of recommendations) {
+    const hintTokens = [
+      ...tokenize(recommendation.label),
+      ...recommendation.catalogHints.flatMap((hint) => tokenize(hint)),
+    ];
+
+    let bestMatch: { id: string; score: number } | null = null;
+    for (const entry of catalogIndex) {
+      let score = 0;
+      for (const token of hintTokens) {
+        if (entry.tokenSet.has(token)) {
+          score += 2;
+          continue;
+        }
+        if (entry.tokens.some((value) => value.startsWith(token) || token.startsWith(value))) {
+          score += 1;
+        }
+      }
+      if (score > 0 && (!bestMatch || score > bestMatch.score)) {
+        bestMatch = { id: entry.id, score };
+      }
+    }
+
+    if (bestMatch) {
+      matches.push(bestMatch.id);
+    }
+  }
+
+  return Array.from(new Set(matches));
+};
+
+const matchSubcontractorRecommendations = (
+  recommendations: SubcontractorRecommendation[],
+  docs: Array<SubcontractorDocument & { id: string }>
+) => {
+  if (!recommendations.length || docs.length === 0) {
+    return [] as string[];
+  }
+  const matches: string[] = [];
+  for (const recommendation of recommendations) {
+    const doc = docs.find((entry) => entry.specialty === recommendation.specialty);
+    if (doc) {
+      matches.push(doc.id);
+    }
+  }
+  return Array.from(new Set(matches));
+};
+
+const buildLaborItemsFromDraft = (
+  draftEntries: LaborDraftSuggestion[],
+  totalSqFt: number,
+  unit: AreaUnit,
+  fallbackName: string
+) => {
+  const baseEntries =
+    draftEntries.length > 0
+      ? draftEntries
+      : [{ id: 'general-fallback', name: fallbackName, rate: 0, summary: 'General labor baseline.' }];
+  const safeSqFt = Number.isFinite(totalSqFt) && totalSqFt >= 0 ? totalSqFt : 0;
+  return baseEntries.map((entry, index) => ({
+    id: index === 0 ? PRIMARY_LABOR_ID : 'labor-' + safeUUID(),
+    name: (index === 0 ? entry.name || fallbackName : entry.name || 'Crew Member').trim(),
+    description: entry.summary,
+    unit,
+    quantity: safeSqFt,
+    unitCost: Number.isFinite(entry.rate) && entry.rate >= 0 ? entry.rate : 0,
+  }));
+};
+
+interface DraftRecommendationPayload {
+  derivedSqFt: number;
+  materialRecommendations: MaterialRecommendation[];
+  laborDraft: LaborDraftSuggestion[];
+  subcontractorRecommendations: SubcontractorRecommendation[];
+  permitDraft: PermitDraftSuggestion[];
+}
+
+const applyDraftRecommendations = (
+  prev: EstimatorState,
+  payload: DraftRecommendationPayload,
+  materialCategories: Array<MaterialCategoryDocument & { id: string }>,
+  subcontractorDocs: Array<SubcontractorDocument & { id: string }>,
+  unit: AreaUnit,
+  primaryLaborName: string
+): EstimatorState => {
+  const nextTotalSqFt = Math.max(0, Math.round(payload.derivedSqFt));
+  const matchedMaterialIds = matchMaterialRecommendations(payload.materialRecommendations, materialCategories);
+  const materialData = buildMaterialItems(matchedMaterialIds, nextTotalSqFt, materialCategories, unit);
+  const matchedSubIds = matchSubcontractorRecommendations(payload.subcontractorRecommendations, subcontractorDocs);
+  const subcontractorData = buildSubcontractorItems(matchedSubIds, nextTotalSqFt, subcontractorDocs, unit);
+  const permitEntries = convertPermitDraftsToEntries(payload.permitDraft);
+  const permits =
+    permitEntries.length > 0 ? buildPermitItems(permitEntries, nextTotalSqFt, unit) : prev.categories.permits;
+  const laborFromDraft = buildLaborItemsFromDraft(payload.laborDraft, nextTotalSqFt, unit, primaryLaborName);
+  const normalizedLabor = normalizeLaborItems(laborFromDraft, nextTotalSqFt, primaryLaborName, unit);
+
+  return {
+    ...prev,
+    totalSqFt: nextTotalSqFt,
+    selectedMaterialCategoryIds:
+      materialData.validIds.length > 0 ? materialData.validIds : prev.selectedMaterialCategoryIds,
+    selectedSubcontractorIds:
+      subcontractorData.validIds.length > 0 ? subcontractorData.validIds : prev.selectedSubcontractorIds,
+    permitsMode: 'itemized',
+    permitsItemizedCache: permitEntries.length > 0 ? permitEntries : prev.permitsItemizedCache,
+    categories: {
+      ...prev.categories,
+      materials: materialData.validIds.length > 0 ? materialData.items : prev.categories.materials,
+      labor: normalizedLabor.items,
+      subcontractors:
+        subcontractorData.validIds.length > 0 ? subcontractorData.items : prev.categories.subcontractors,
+      permits,
+    },
+  };
 };
 
 const makePermitSingleItem = (rate: number, totalSqFt: number, unit: AreaUnit): CostItem => ({
@@ -659,6 +832,12 @@ export function EstimatorPage() {
   const [cloudSaving, setCloudSaving] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+  const [intakeResult, setIntakeResult] = useState<IntakeDraftResult | null>(null);
+  const [intakeBusy, setIntakeBusy] = useState(false);
+  const [planResult, setPlanResult] = useState<PlanExtractionResult | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showIntakeModal, setShowIntakeModal] = useState(false);
   const { user } = useAuth();
   const [profileDefaults, setProfileDefaults] = useState<{ unit: AreaUnit; price: number; fullName: string } | null>(null);
   const { items: cloudEstimates, loading: cloudLoading } = useUserCollection<EstimateDocument>('estimates', {
@@ -1590,25 +1769,109 @@ export function EstimatorPage() {
       setSelectedEstimateId(null);
       window.localStorage.removeItem(STORAGE_KEY);
       setLastSavedAt(Date.now());
+      setIntakeResult(null);
+      setPlanResult(null);
+      setShowPlanModal(false);
+      setShowIntakeModal(false);
     }
   };
 
-  const handleDownload = () => {
-    const slugSource = (derivedProjectName || 'project').trim().toLowerCase();
-    const slug = slugSource ? slugSource.replace(/\s+/g, '-') : 'project';
-    const filename = 'estimate-' + slug + '.json';
+  const handleIntakeDraft = async (scopeText: string) => {
+    const trimmed = scopeText.trim();
+    if (!trimmed) {
+      window.alert('Describe the scope before drafting.');
+      return;
+    }
+    setIntakeBusy(true);
+    try {
+      const fallbackSqFt =
+        state.totalSqFt > 0 ? convertAreaValue(state.totalSqFt, state.areaUnit, 'sq ft') : undefined;
+      const draft = draftEstimateFromScope(trimmed, {
+        fallbackSqFt,
+        defaultUnit: state.areaUnit,
+      });
+      setIntakeResult(draft);
+      setState((prev) =>
+        applyDraftRecommendations(
+          prev,
+          {
+            derivedSqFt: draft.derivedSqFt,
+            materialRecommendations: draft.materialRecommendations,
+            laborDraft: draft.laborDraft,
+            subcontractorRecommendations: draft.subcontractorRecommendations,
+            permitDraft: draft.permitDraft,
+          },
+          materialCategories,
+          subcontractorDocs,
+          prev.areaUnit,
+          primaryLaborName
+        )
+      );
+      setCloudError(null);
+      setCloudMessage('Drafted estimate from description');
+    } catch (error) {
+      console.error(error);
+      window.alert('Could not interpret that description. Try adding more scope detail.');
+    } finally {
+      setIntakeBusy(false);
+    }
+  };
 
-    const blob = new Blob([JSON.stringify(state, null, 2)], {
-      type: 'application/json',
+  const handlePlanAnalyze = async (files: File[], notes: string) => {
+    if (files.length === 0 && notes.trim().length === 0) {
+      window.alert('Upload at least one plan file or add notes before analyzing.');
+      return;
+    }
+    setPlanBusy(true);
+    try {
+      const result = await extractPlanInsights(files, notes, { defaultUnit: state.areaUnit });
+      setPlanResult(result);
+      setCloudMessage('Plan set analyzed');
+    } catch (error) {
+      console.error(error);
+      window.alert('Plan analysis failed. Try smaller files or add a short description.');
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
+  const handleApplyPlanResult = () => {
+    if (!planResult) {
+      return;
+    }
+    setState((prev) =>
+      applyDraftRecommendations(
+        prev,
+        {
+          derivedSqFt: planResult.derivedSqFt,
+          materialRecommendations: planResult.materialRecommendations,
+          laborDraft: planResult.laborDraft,
+          subcontractorRecommendations: planResult.subcontractorRecommendations,
+          permitDraft: planResult.permitDraft,
+        },
+        materialCategories,
+        subcontractorDocs,
+        prev.areaUnit,
+        primaryLaborName
+      )
+    );
+    setCloudMessage('Plan insights applied');
+  };
+
+  const handleDownload = () => {
+    generateEstimatePdf({
+      projectName: derivedProjectName,
+      clientName: derivedClientName,
+      location: derivedLocation,
+      preparedBy: user?.displayName || user?.email || null,
+      totals,
+      financials,
+      settings: state.settings,
+      categories: state.categories,
+      totalSqFt: state.totalSqFt,
+      unitLabel,
+      notes: state.legacyProject?.notes ?? null,
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   };
 
   const handleCopySummary = async () => {
@@ -1722,48 +1985,151 @@ export function EstimatorPage() {
   };
 
   return (
-    <div className="estimator">
-      <header className="estimator__header">
-        <div>
-          <h1>ScopeSmart Estimator</h1>
-          <p>Build clear, defensible project budgets in minutes.</p>
+    <>
+      {showPlanModal ? (
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal__card modal__card--wide">
+            <div className="modal__header">
+              <div>
+                <h3>Plan & Photo Extraction</h3>
+                <p>Drop plan PDFs or site photos to auto-detect footprint, floors, and critical scopes.</p>
+              </div>
+              <div className="modal__header-actions">
+                {planResult ? (
+                  <div className="plan-extraction-panel__pill">
+                    <strong>{planResult.derivedSqFt.toLocaleString()} sq ft</strong>
+                    <span>Draft footprint</span>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="modal__close"
+                  aria-label="Close plan extraction"
+                  onClick={() => setShowPlanModal(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="modal__body">
+              <PlanExtractionPanel
+                result={planResult}
+                onAnalyze={handlePlanAnalyze}
+                onApply={handleApplyPlanResult}
+                isProcessing={planBusy}
+                showHeader={false}
+              />
+            </div>
+          </div>
         </div>
-        <div className="estimator__controls">
-          <label className="estimator__select">
-            <span>Project</span>
-            <select
-              value={state.selectedProjectId ?? ''}
-              onChange={(event) => handleProjectSelect(event.target.value)}
-              disabled={projectsLoading || projectDocs.length === 0}
-            >
-              <option value="">
-                {projectsLoading ? 'Loading projects...' : 'Select a project'}
-              </option>
-              {projectDocs.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                  {project.client ? ` (${project.client})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+      ) : null}
 
-          <label className="estimator__select">
-            <span>Saved estimates</span>
-            <select
-              value={selectedEstimateId ?? ''}
-              onChange={(event) => handleSelectEstimate(event.target.value)}
-              disabled={cloudLoading || cloudSaving}
-            >
-              <option value="">New estimate</option>
-              {cloudEstimates.map((estimate) => (
-                <option key={estimate.id} value={estimate.id}>
-                  {formatEstimateLabel(estimate)}
-                </option>
-              ))}
-            </select>
-          </label>
+      {showIntakeModal ? (
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal__card modal__card--wide">
+            <div className="modal__header">
+              <div>
+                <h3>AI Scope Intake</h3>
+                <p>Paste narrative notes and let ScopeSmart draft materials, labor, and subcontractor picks.</p>
+              </div>
+              <div className="modal__header-actions">
+                {intakeResult && intakeResult.confidence ? (
+                  <div
+                    className={`ai-intake-panel__confidence ai-intake-panel__confidence--${
+                      intakeResult.confidence >= 0.75 ? 'high' : intakeResult.confidence <= 0.5 ? 'low' : 'med'
+                    }`}
+                  >
+                    <strong>{Math.round(intakeResult.confidence * 100)}% match</strong>
+                    <span>Latest draft</span>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="modal__close"
+                  aria-label="Close AI intake"
+                  onClick={() => setShowIntakeModal(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="modal__body">
+              <NLIntakePanel
+                result={intakeResult}
+                onDraft={handleIntakeDraft}
+                isProcessing={intakeBusy}
+                totalSqFt={state.totalSqFt}
+                unitLabel={unitLabel}
+                showHeader={false}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
+      <div className="estimator">
+        <header className="estimator__header">
+          <div className="estimator__intro-line">
+            <div className="estimator__intro-text">
+              <h1>ScopeSmart Estimator</h1>
+              <p>Build clear, defensible project budgets in minutes.</p>
+            </div>
+            <div className="estimator__inline-form">
+              <label className="estimator__select estimator__select--inline">
+                <span>Project</span>
+                <select
+                  value={state.selectedProjectId ?? ''}
+                  onChange={(event) => handleProjectSelect(event.target.value)}
+                  disabled={projectsLoading || projectDocs.length === 0}
+                >
+                  <option value="">
+                    {projectsLoading ? 'Loading projects...' : 'Select a project'}
+                  </option>
+                  {projectDocs.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                      {project.client ? ` (${project.client})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="estimator__select estimator__select--inline">
+                <span>Saved estimates</span>
+                <select
+                  value={selectedEstimateId ?? ''}
+                  onChange={(event) => handleSelectEstimate(event.target.value)}
+                  disabled={cloudLoading || cloudSaving}
+                >
+                  <option value="">New estimate</option>
+                  {cloudEstimates.map((estimate) => (
+                    <option key={estimate.id} value={estimate.id}>
+                      {formatEstimateLabel(estimate)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+            </div>
+            <div className="estimator__actions estimator__actions--inline">
+              <button className="button" type="button" onClick={handleSaveToWorkspace} disabled={cloudSaving}>
+                {cloudSaving ? 'Saving...' : 'Save to Workspace'}
+              </button>
+              {selectedEstimateId ? (
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={handleDeleteEstimate}
+                  disabled={cloudSaving}
+                >
+                  Delete Saved Estimate
+                </button>
+              ) : null}
+              <button className="button button--ghost" type="button" onClick={handleReset}>
+                Start New Estimate
+              </button>
+            </div>
+          </div>
           <div className="estimator__messages">
             {!projectsLoading && projectDocs.length === 0 ? (
               <span className="badge badge--error">Create a project to start saving estimates.</span>
@@ -1771,26 +2137,6 @@ export function EstimatorPage() {
             {cloudMessage ? <span className="badge badge--success">{cloudMessage}</span> : null}
             {cloudError ? <span className="badge badge--error">{cloudError}</span> : null}
           </div>
-
-          <div className="estimator__actions">
-            <button className="button" type="button" onClick={handleSaveToWorkspace} disabled={cloudSaving}>
-              {cloudSaving ? 'Saving...' : 'Save to Workspace'}
-            </button>
-            {selectedEstimateId ? (
-              <button
-                className="button button--ghost"
-                type="button"
-                onClick={handleDeleteEstimate}
-                disabled={cloudSaving}
-              >
-                Delete Saved Estimate
-              </button>
-            ) : null}
-            <button className="button button--ghost" type="button" onClick={handleReset}>
-              Start New Estimate
-            </button>
-          </div>
-        </div>
       </header>
 
       <main className="layout">
@@ -1805,7 +2151,23 @@ export function EstimatorPage() {
               </div>
             </header>
 
-            <div className="panel__controls">
+            <div className="panel__controls panel__controls--ai">
+              <div className="panel__controls-ai-buttons">
+                <button
+                  type="button"
+                  className="estimator__ai-button"
+                  onClick={() => setShowPlanModal(true)}
+                >
+                  Plan & Photo Extraction
+                </button>
+                <button
+                  type="button"
+                  className="estimator__ai-button"
+                  onClick={() => setShowIntakeModal(true)}
+                >
+                  AI Scope Intake
+                </button>
+              </div>
               <label className="field field--horizontal">
                 <span>Total Area (sq ft)</span>
                 <input
@@ -1903,6 +2265,7 @@ export function EstimatorPage() {
         />
       </main>
     </div>
+    </>
   );
 }
 
