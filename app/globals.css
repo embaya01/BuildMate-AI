@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-subtle: #cbd5e1;
+  --bg-sidebar: #1e293b;
+  --border-color: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.15);
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --shadow-soft: 0 20px 40px -24px rgba(15, 23, 42, 0.35);
+  --shadow-panel: 0 24px 60px -30px rgba(30, 41, 59, 0.35);
+  --brand-primary: #3b82f6;
+  --brand-secondary: #1e3a8a;
+  --accent-ai: linear-gradient(135deg, #148ba6, #3b82f6);
+  --success: #108981;
+  --danger: #f97316;
+  --warning: #facc15;
+}
+
+[data-theme='dark'] {
+  --bg-base: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-subtle: #12203b;
+  --bg-sidebar: #0f172a;
+  --border-color: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.25);
+  --text-primary: #e2e8f0;
+  --text-secondary: #cbd5f5;
+  --text-muted: #94a3b8;
+  --shadow-soft: 0 18px 40px -28px rgba(15, 23, 42, 0.8);
+  --shadow-panel: 0 26px 50px -24px rgba(8, 47, 73, 0.75);
+  --brand-primary: #60a5fa;
+  --brand-secondary: #38bdf8;
+  --accent-ai: linear-gradient(135deg, #38bdf8, #60a5fa);
+  --success: #34d399;
+  --danger: #fb923c;
+  --warning: #fcd34d;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Manrope', 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
