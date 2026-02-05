@@ -29,20 +29,22 @@ const detectPreferredTheme = (): Theme => {
 };
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') {
-      return 'light';
-    }
-    const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    return stored ?? detectPreferredTheme();
-  });
+  const [theme, setThemeState] = useState<Theme>('light');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
+    const resolved = stored ?? detectPreferredTheme();
+    setThemeState(resolved);
+    applyTheme(resolved);
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     applyTheme(theme);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, theme);
-    }
-  }, [theme]);
+    window.localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme, mounted]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
