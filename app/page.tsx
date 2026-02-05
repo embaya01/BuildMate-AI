@@ -1,31 +1,8 @@
-'use client';
-
-import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { LandingPage } from '@/components/LandingPage';
-
 export default function Home() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace('/dashboard');
-    }
-  }, [user, loading, router]);
-
-  if (loading) {
-    return (
-      <div className="fullscreen-state">
-        <div className="spinner" aria-label="Loading" />
-      </div>
-    );
-  }
-
-  if (user) {
-    return null;
-  }
-
-  return <LandingPage />;
+  return (
+    <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+      <h1>BuildMate AI</h1>
+      <p>If you can see this, the app is working.</p>
+    </div>
+  );
 }
